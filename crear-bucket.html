@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Configuración inicial — Garitas Mexicali</title>
+<style>
+  body{font-family:Arial,sans-serif;background:#14110f;color:#fff;max-width:480px;margin:60px auto;padding:0 20px;text-align:center;}
+  h1{font-size:20px;}
+  p{color:#cfc7b6;font-size:14px;line-height:1.6;}
+  input{font-size:16px;padding:10px;width:100%;border-radius:6px;border:1px solid #444;margin:10px 0;box-sizing:border-box;}
+  button{background:#c98a2b;color:#181410;border:none;padding:12px 24px;border-radius:6px;font-weight:bold;font-size:15px;cursor:pointer;}
+  button:disabled{background:#666;}
+  .result{margin-top:24px;padding:16px;background:#26211c;border-radius:8px;word-break:break-all;font-family:monospace;font-size:15px;display:none;}
+  .result.show{display:block;}
+  .copybtn{margin-top:10px;background:#3f8a53;font-size:13px;padding:8px 16px;}
+</style>
+</head>
+<body>
+  <h1>Paso único: crear la base de datos del chat</h1>
+  <p>Esto crea el "cajón" donde se van a guardar los mensajes del chat y el contador de visitas. Solo lo haces una vez. Pon tu correo (es para poder administrar el cajón después, KVdb no te va a mandar spam) y dale clic.</p>
+  <input type="email" id="email" placeholder="tu@correo.com">
+  <br>
+  <button id="createBtn">Crear base de datos</button>
+  <div class="result" id="result">
+    <div>Tu BUCKET ID:</div>
+    <div id="bucketId" style="font-size:18px;margin:8px 0;"></div>
+    <button class="copybtn" id="copyBtn">Copiar</button>
+    <p style="font-size:12px;margin-top:14px;">Copia este ID y pégalo donde dice <code>BUCKET_ID = "PON_AQUI_TU_ID"</code> al inicio del script en index.html. Después de eso, borra este archivo, ya no lo necesitas.</p>
+  </div>
+<script>
+  document.getElementById('createBtn').addEventListener('click', async function(){
+    const email = document.getElementById('email').value.trim();
+    if(!email){ alert('Pon tu correo primero.'); return; }
+    const btn = this;
+    btn.disabled = true;
+    btn.textContent = 'Creando…';
+    try{
+      const res = await fetch('https://kvdb.io', {
+        method: 'POST',
+        headers: {'Content-Type':'application/x-www-form-urlencoded'},
+        body: 'email=' + encodeURIComponent(email)
+      });
+      if(!res.ok) throw new Error('respuesta ' + res.status);
+      const bucketId = (await res.text()).trim();
+      document.getElementById('bucketId').textContent = bucketId;
+      document.getElementById('result').classList.add('show');
+    }catch(e){
+      alert('Algo falló: ' + e.message + '. Intenta de nuevo.');
+    }finally{
+      btn.disabled = false;
+      btn.textContent = 'Crear base de datos';
+    }
+  });
+  document.getElementById('copyBtn').addEventListener('click', function(){
+    navigator.clipboard.writeText(document.getElementById('bucketId').textContent);
+    this.textContent = '¡Copiado!';
+    setTimeout(()=>{ this.textContent = 'Copiar'; }, 1500);
+  });
+</script>
+</body>
+</html>

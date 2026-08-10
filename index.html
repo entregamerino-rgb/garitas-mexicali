@@ -228,13 +228,38 @@
 
 <div class="lightbox" id="lightbox"><img id="lightboxImg" src=""></div>
 
-<script src="https://unpkg.com/kvdb.io@v1.0"></script>
 <script>
 (function(){
   // Pega aquí el ID que te dio crear-bucket.html — solo esa línea hay que tocar.
   const BUCKET_ID = "PON_AQUI_TU_BUCKET_ID";
-  const bucket = KVdb.bucket(BUCKET_ID);
+  const KV_BASE = "https://kvdb.io/" + BUCKET_ID;
   const MSG_TTL = 24 * 60 * 60; // 24h en segundos — kvdb borra el mensaje solo, sin que nadie tenga que hacer nada
+
+  // Hablamos directo con la API REST documentada de KVdb (sin librería de CDN,
+  // para no depender de qué versión trae unpkg ese día).
+  async function kvGet(key){
+    const res = await fetch(KV_BASE + "/" + encodeURIComponent(key));
+    if(res.status === 404) return null;
+    if(!res.ok) throw new Error('kv get failed: ' + res.status);
+    return await res.text();
+  }
+  async function kvSet(key, value, ttl){
+    let url = KV_BASE + "/" + encodeURIComponent(key);
+    if(ttl) url += "?ttl=" + ttl;
+    const res = await fetch(url, { method:'POST', body: value });
+    if(!res.ok) throw new Error('kv set failed: ' + res.status);
+  }
+  async function kvIncr(key, delta){
+    const res = await fetch(KV_BASE + "/" + encodeURIComponent(key), { method:'PATCH', body: (delta>=0?'+':'') + delta });
+    if(!res.ok) throw new Error('kv incr failed: ' + res.status);
+    return (await res.text()).trim();
+  }
+  async function kvList(prefix){
+    const url = KV_BASE + "/?prefix=" + encodeURIComponent(prefix) + "&values=true&format=json&limit=100&reverse=true";
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('kv list failed: ' + res.status);
+    return await res.json(); // array of [key, value]
+  }
 
   const FN_WT = "/.netlify/functions/wait-times"; // opcional: sigue funcionando si algún día lo despliegas en Netlify
   const CBP_DIRECT = "https://bwt.cbp.gov/api/waittimes";
@@ -410,9 +435,9 @@
       const already = sessionStorage.getItem('gmx_counted');
       let total;
       if(already){
-        total = await bucket.get('visits');
+        total = await kvGet('visits');
       }else{
-        total = await bucket.incr('visits', 1);
+        total = await kvIncr('visits', 1);
         sessionStorage.setItem('gmx_counted','1');
       }
       document.getElementById('counterNum').textContent = Number(total||0).toLocaleString('es-MX');
@@ -451,7 +476,7 @@
   async function loadChat(){
     try{
       // list every key under msg: (kvdb already expires ones older than 24h on its own via TTL)
-      const rows = await bucket.list({ prefix: 'msg:', values: true, reverse: true, limit: 100 });
+      const rows = await kvList('msg:');
       const list = rows.map(([key, value]) => {
         try{ return JSON.parse(value); }catch(e){ return null; }
       }).filter(Boolean);
@@ -512,7 +537,7 @@
     try{
       const msg = { name, garita, lane, text, image: selectedPhoto || undefined, ts: new Date().toISOString() };
       const key = 'msg:' + Date.now() + '-' + Math.random().toString(36).slice(2,8);
-      await bucket.set(key, JSON.stringify(msg), { ttl: MSG_TTL }); // auto-borrado a las 24h, sin cron ni nada
+      await kvSet(key, JSON.stringify(msg), MSG_TTL); // auto-borrado a las 24h, sin cron ni nada
       statusEl.textContent='Publicado.'; statusEl.className='status ok';
       f.text.value=''; selectedPhoto=null;
       document.getElementById('previewWrap').style.display='none';

@@ -46,13 +46,19 @@
 
   /* ---- wait times: the main event ---- */
   .updated{
-    color:#a89e8c;font-size:11px;text-align:center;padding:4px 0 10px;
-    display:flex;justify-content:center;align-items:center;gap:6px;
+    display:flex;justify-content:space-between;align-items:center;gap:10px;
+    padding:6px 0 12px;
   }
-  .updated button{
-    background:none;border:none;color:#c98a2b;font-size:11px;padding:0;
-    text-decoration:underline;cursor:pointer;
+  .updated .synctext{color:#a89e8c;font-size:11.5px;flex:1;}
+  #refreshBtn{
+    background:#c98a2b;color:#1a1410;border:none;
+    font-weight:800;font-size:13.5px;padding:10px 18px;border-radius:24px;
+    display:flex;align-items:center;gap:6px;white-space:nowrap;
+    box-shadow:0 3px 10px rgba(201,138,43,.4);
   }
+  #refreshBtn:active{transform:scale(.96);}
+  #refreshBtn.spinning .ic{display:inline-block;animation:spin .8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
 
   .garita{
     background:var(--panel);border-radius:10px;overflow:hidden;margin-bottom:12px;
@@ -160,7 +166,10 @@
 
 <div class="wrap">
 
-  <div class="updated" id="lastSync">Cargando… <button id="refreshBtn" type="button">actualizar</button></div>
+  <div class="updated">
+    <span class="synctext" id="lastSync">Cargando…</span>
+    <button id="refreshBtn" type="button"><span class="ic">🔄</span> Actualizar</button>
+  </div>
 
   <div id="tiempos">
     <div class="garita">
@@ -219,22 +228,34 @@
 
 <div class="lightbox" id="lightbox"><img id="lightboxImg" src=""></div>
 
+<script src="https://unpkg.com/kvdb.io@v1.0"></script>
 <script>
 (function(){
-  const FN_WT = "/.netlify/functions/wait-times";
-  const FN_CHAT = "/.netlify/functions/chat";
-  const FN_COUNTER = "/.netlify/functions/counter";
+  // Pega aquí el ID que te dio crear-bucket.html — solo esa línea hay que tocar.
+  const BUCKET_ID = "PON_AQUI_TU_BUCKET_ID";
+  const bucket = KVdb.bucket(BUCKET_ID);
+  const MSG_TTL = 24 * 60 * 60; // 24h en segundos — kvdb borra el mensaje solo, sin que nadie tenga que hacer nada
+
+  const FN_WT = "/.netlify/functions/wait-times"; // opcional: sigue funcionando si algún día lo despliegas en Netlify
   const CBP_DIRECT = "https://bwt.cbp.gov/api/waittimes";
   const PROXIES = [
     url => "https://api.allorigins.win/raw?url=" + encodeURIComponent(url),
-    url => "https://corsproxy.io/?" + encodeURIComponent(url)
+    url => "https://corsproxy.io/?" + encodeURIComponent(url),
+    url => "https://thingproxy.freeboard.io/fetch/" + url
   ];
+  const PROXY_TIMEOUT_MS = 6000;
+
+  function fetchWithTimeout(url, ms){
+    const ctrl = new AbortController();
+    const t = setTimeout(()=>ctrl.abort(), ms);
+    return fetch(url, {signal: ctrl.signal}).finally(()=>clearTimeout(t));
+  }
 
   async function fetchViaProxies(url){
     let lastErr;
     for(const build of PROXIES){
       try{
-        const res = await fetch(build(url));
+        const res = await fetchWithTimeout(build(url), PROXY_TIMEOUT_MS);
         if(!res.ok) throw new Error('bad status');
         return await res.json();
       }catch(e){ lastErr = e; }
@@ -318,7 +339,7 @@
     if(!cached) return false;
     applyCache(cached);
     const mins = Math.max(0, Math.round((Date.now()-cached.ts)/60000));
-    document.getElementById('lastSync').firstChild.textContent =
+    document.getElementById('lastSync').textContent =
       'Mostrando datos de hace ' + mins + ' min · actualizando… ';
     return true;
   }
@@ -328,14 +349,25 @@
     if(!cached) return false;
     applyCache(cached);
     const mins = Math.max(1, Math.round((Date.now()-cached.ts)/60000));
-    document.getElementById('lastSync').firstChild.textContent =
+    document.getElementById('lastSync').textContent =
       '⚠️ CBP no responde · último dato de hace ' + mins + ' min · revisa el chat ';
     return true;
   }
 
   async function loadWaitTimes(){
+    const btn = document.getElementById('refreshBtn');
+    btn.classList.add('spinning');
+    btn.disabled = true;
     try{
-      const res = await fetch(FN_WT);
+      await loadWaitTimesInner();
+    }finally{
+      btn.classList.remove('spinning');
+      btn.disabled = false;
+    }
+  }
+  async function loadWaitTimesInner(){
+    try{
+      const res = await fetchWithTimeout(FN_WT, PROXY_TIMEOUT_MS);
       if(res.ok){
         const data = await res.json();
         if(data.ports){
@@ -345,7 +377,7 @@
             if(!port) return;
             setLanes(container, port.normal, port.readyLane, port.sentri, port.pedestrian);
           });
-          document.getElementById('lastSync').firstChild.textContent = 'Actualizado ' + new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}) + ' ';
+          document.getElementById('lastSync').textContent = 'Actualizado ' + new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}) + ' ';
           cacheSnapshot();
           return;
         }
@@ -358,14 +390,14 @@
           const entry = all.find(x=>x.port_number===pn);
           if(entry) fillFromRaw(entry);
         });
-        document.getElementById('lastSync').firstChild.textContent = 'Actualizado ' + new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}) + ' ';
+        document.getElementById('lastSync').textContent = 'Actualizado ' + new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}) + ' ';
         cacheSnapshot();
       }catch(e2){
         // both the Netlify function and the direct CBP fetch failed —
         // fall back to the last known-good reading instead of a blank screen
         if(!restoreFromCache()){
           markError();
-          document.getElementById('lastSync').firstChild.textContent = 'Sin conexión con CBP ';
+          document.getElementById('lastSync').textContent = 'Sin conexión con CBP ';
         }
       }
     }
@@ -376,15 +408,26 @@
   async function loadCounter(){
     try{
       const already = sessionStorage.getItem('gmx_counted');
-      const res = await fetch(FN_COUNTER + (already?'?count=0':'?count=1'));
-      const data = await res.json();
-      document.getElementById('counterNum').textContent = data.total.toLocaleString('es-MX');
-      sessionStorage.setItem('gmx_counted','1');
+      let total;
+      if(already){
+        total = await bucket.get('visits');
+      }else{
+        total = await bucket.incr('visits', 1);
+        sessionStorage.setItem('gmx_counted','1');
+      }
+      document.getElementById('counterNum').textContent = Number(total||0).toLocaleString('es-MX');
     }catch(e){ document.getElementById('counterNum').textContent = '—'; }
   }
 
-  /* ---------- chat ---------- */
+  /* ---------- chat (all client-side via KVdb, no server needed) ---------- */
   let selectedPhoto = null;
+  const BANNED_PATTERNS = [
+    /https?:\/\/\S+/i,
+    /\b(viagra|casino|porn|xxx|crypto\s*airdrop|prestamo\s*facil|gana\s*dinero)\b/i,
+    /(.)\1{9,}/,
+  ];
+  function isSpammy(text){ return text && BANNED_PATTERNS.some(re=>re.test(text)); }
+
   function timeAgo(iso){
     const diff=(Date.now()-new Date(iso).getTime())/1000;
     if(diff<60) return 'ahora';
@@ -407,10 +450,15 @@
 
   async function loadChat(){
     try{
-      const res=await fetch(FN_CHAT);
-      const data=await res.json();
-      renderMsgs(data.messages||[]);
-    }catch(e){ document.getElementById('chatMessages').innerHTML='<div class="empty">Chat no disponible (necesita estar desplegado en Netlify).</div>'; }
+      // list every key under msg: (kvdb already expires ones older than 24h on its own via TTL)
+      const rows = await bucket.list({ prefix: 'msg:', values: true, reverse: true, limit: 100 });
+      const list = rows.map(([key, value]) => {
+        try{ return JSON.parse(value); }catch(e){ return null; }
+      }).filter(Boolean);
+      renderMsgs(list);
+    }catch(e){
+      document.getElementById('chatMessages').innerHTML = '<div class="empty">Chat no disponible todavía — falta poner el BUCKET_ID en index.html (ver crear-bucket.html).</div>';
+    }
   }
 
   document.getElementById('photoInput').addEventListener('change',function(e){
@@ -419,11 +467,22 @@
     reader.onload=function(ev){
       const img=new Image();
       img.onload=function(){
-        const c=document.createElement('canvas'); const MAX=900;
+        // kvdb values are capped at 16KB, so photos here have to be tiny thumbnails
+        const c=document.createElement('canvas'); const MAX=200;
         let w=img.width,h=img.height;
         if(w>h && w>MAX){h*=MAX/w;w=MAX;} else if(h>MAX){w*=MAX/h;h=MAX;}
         c.width=w;c.height=h; c.getContext('2d').drawImage(img,0,0,w,h);
-        selectedPhoto=c.toDataURL('image/jpeg',0.7);
+        let quality = 0.5;
+        let dataUrl = c.toDataURL('image/jpeg', quality);
+        while(dataUrl.length > 15000 && quality > 0.15){
+          quality -= 0.1;
+          dataUrl = c.toDataURL('image/jpeg', quality);
+        }
+        if(dataUrl.length > 15000){
+          alert('Esa foto no cupo aunque se comprimió al máximo (el chat solo acepta ~16KB por mensaje). Prueba con otra imagen más simple.');
+          return;
+        }
+        selectedPhoto = dataUrl;
         const wrap=document.getElementById('previewWrap');
         wrap.style.display='flex';
         wrap.innerHTML='<img src="'+selectedPhoto+'"><button type="button" id="rmPhoto">quitar</button>';
@@ -443,26 +502,24 @@
     const statusEl=document.getElementById('chatStatus');
     if(Date.now()<cooldown){ statusEl.textContent='Espera unos segundos.'; statusEl.className='status err'; return; }
     const f=e.target;
-    const name=f.name.value.trim().slice(0,24);
+    const name=f.name.value.trim().slice(0,24) || 'Anónimo';
     const garita=f.garita.value, lane=f.lane.value;
     const text=f.text.value.trim().slice(0,280);
     if(!text && !selectedPhoto){ statusEl.textContent='Escribe algo o adjunta foto.'; statusEl.className='status err'; return; }
+    if(isSpammy(text)){ statusEl.textContent='Ese mensaje parece spam (nada de links, por favor).'; statusEl.className='status err'; return; }
     const btn=document.getElementById('sendBtn'); btn.disabled=true;
     statusEl.textContent='Enviando…'; statusEl.className='status';
     try{
-      const res=await fetch(FN_CHAT,{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({name,garita,lane,text,image:selectedPhoto})});
-      const data=await res.json();
-      if(!res.ok){ statusEl.textContent=data.error||'No se pudo enviar.'; statusEl.className='status err'; }
-      else{
-        statusEl.textContent='Publicado.'; statusEl.className='status ok';
-        f.text.value=''; selectedPhoto=null;
-        document.getElementById('previewWrap').style.display='none';
-        document.getElementById('previewWrap').innerHTML='';
-        document.getElementById('photoInput').value='';
-        cooldown=Date.now()+15000;
-        loadChat();
-      }
+      const msg = { name, garita, lane, text, image: selectedPhoto || undefined, ts: new Date().toISOString() };
+      const key = 'msg:' + Date.now() + '-' + Math.random().toString(36).slice(2,8);
+      await bucket.set(key, JSON.stringify(msg), { ttl: MSG_TTL }); // auto-borrado a las 24h, sin cron ni nada
+      statusEl.textContent='Publicado.'; statusEl.className='status ok';
+      f.text.value=''; selectedPhoto=null;
+      document.getElementById('previewWrap').style.display='none';
+      document.getElementById('previewWrap').innerHTML='';
+      document.getElementById('photoInput').value='';
+      cooldown=Date.now()+15000;
+      loadChat();
     }catch(err){ statusEl.textContent='Error de conexión.'; statusEl.className='status err'; }
     finally{ setTimeout(()=>{btn.disabled=false;},4000); }
   });
@@ -472,7 +529,7 @@
   loadWaitTimes();
   loadChat();
   setInterval(loadWaitTimes,60000);
-  setInterval(loadChat,20000);
+  setInterval(loadChat,15000);
 })();
 </script>
 </body>

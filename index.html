@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#14110f">
+<title>Garitas Mexicali — Tiempos de espera</title>
+<style>
+  :root{
+    --bg:#14110f;
+    --panel:#fff;
+    --ink:#181410;
+    --line:#e4ded2;
+    --green:#3f8a53;
+    --yellow:#c98a2b;
+    --red:#b8492f;
+    --gray:#9a9186;
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-t: env(safe-area-inset-top, 0px);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html{-webkit-text-size-adjust:100%;}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
+    padding-bottom:calc(20px + var(--safe-b));
+  }
+  .wrap{max-width:520px;margin:0 auto;padding:0 12px;}
+
+  /* ---- sticky top: brand + quick jump pills, thumb reachable ---- */
+  .topbar{
+    position:sticky;top:0;z-index:30;
+    background:var(--bg);
+    padding:calc(10px + var(--safe-t)) 12px 8px;
+  }
+  .topbar .row1{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+  .topbar b{color:#fff;font-size:16px;}
+  .topbar .visits{color:#cfc7b6;font-size:11.5px;}
+  .topbar .visits b{color:#fff;font-size:12.5px;}
+  .quicknav{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;-webkit-overflow-scrolling:touch;}
+  .quicknav a{
+    flex:0 0 auto;background:#26211c;color:#e7e0d0;text-decoration:none;
+    font-size:12.5px;padding:8px 14px;border-radius:20px;white-space:nowrap;
+    border:1px solid #35302a;
+  }
+
+  /* ---- wait times: the main event ---- */
+  .updated{
+    color:#a89e8c;font-size:11px;text-align:center;padding:4px 0 10px;
+    display:flex;justify-content:center;align-items:center;gap:6px;
+  }
+  .updated button{
+    background:none;border:none;color:#c98a2b;font-size:11px;padding:0;
+    text-decoration:underline;cursor:pointer;
+  }
+
+  .garita{
+    background:var(--panel);border-radius:10px;overflow:hidden;margin-bottom:12px;
+    box-shadow:0 4px 14px rgba(0,0,0,.35);
+    scroll-margin-top:96px; /* so anchor jumps clear the sticky bar */
+  }
+  .garita h2{
+    margin:0;padding:12px 14px;font-size:15.5px;background:var(--ink);color:#fff;
+    display:flex;justify-content:space-between;align-items:center;
+  }
+  .garita h2 span{font-size:10.5px;font-weight:normal;color:#cfc7b6;}
+  .lanes{display:grid;grid-template-columns:1fr 1fr;}
+  .lane{
+    padding:14px 8px;text-align:center;border-bottom:1px solid var(--line);
+    border-right:1px solid var(--line);
+  }
+  .lane:nth-child(2n){border-right:none;}
+  .lane .lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#8a8175;margin-bottom:6px;}
+  .lane .val{font-size:26px;font-weight:800;line-height:1;}
+  .lane .val.green{color:var(--green);}
+  .lane .val.yellow{color:var(--yellow);}
+  .lane .val.red{color:var(--red);}
+  .lane .val.gray{color:var(--gray);font-size:16px;}
+  .lane .val.loading{color:var(--gray);font-size:13px;font-weight:normal;}
+
+  /* ---- section headers ---- */
+  .h{color:#cfc7b6;font-size:12px;text-transform:uppercase;letter-spacing:.08em;margin:22px 4px 8px;scroll-margin-top:96px;}
+
+  /* ---- chat ---- */
+  .chat{background:var(--panel);border-radius:10px;overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,.35);}
+  .chat-sub{padding:8px 14px;font-size:11px;color:#999;border-bottom:1px solid var(--line);background:#faf7f0;}
+  .msgs{max-height:64vh;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+  .msg{padding:11px 14px;border-bottom:1px solid var(--line);font-size:14px;}
+  .msg .meta{font-size:11px;color:#888;display:flex;justify-content:space-between;margin-bottom:4px;gap:6px;}
+  .msg .meta .who{color:var(--ink);font-weight:700;}
+  .tag{background:#f1ecdf;border-radius:8px;padding:2px 7px;font-size:10px;margin-left:4px;white-space:nowrap;}
+  .msg img{margin-top:8px;max-width:100%;max-height:220px;border-radius:6px;cursor:zoom-in;display:block;}
+  .empty{padding:24px 14px;text-align:center;color:#999;font-size:13px;}
+
+  form{padding:12px;border-top:2px solid var(--ink);background:#f8f5ec;}
+  form .row{display:flex;gap:6px;margin-bottom:8px;}
+  input[type=text],select,textarea{
+    font-family:inherit;font-size:16px; /* 16px prevents iOS auto-zoom on focus */
+    padding:11px 10px;border:1px solid #cfc7b6;border-radius:8px;background:#fff;
+    width:100%;
+  }
+  select{-webkit-appearance:none;appearance:none;}
+  form .row input[name=name]{flex:1.2;min-width:0;}
+  form .row2{display:flex;gap:6px;margin-bottom:8px;}
+  form .row2 select{flex:1;min-width:0;}
+  textarea{min-height:56px;resize:vertical;}
+  .actions{display:flex;justify-content:space-between;align-items:center;margin-top:8px;gap:10px;}
+  .filelbl{
+    font-size:13px;color:#444;display:flex;align-items:center;gap:5px;
+    padding:11px 4px;cursor:pointer;
+  }
+  button{
+    background:var(--red);color:#fff;border:none;padding:0 24px;height:46px;
+    border-radius:8px;font-weight:700;font-size:15px;cursor:pointer;
+  }
+  button:disabled{background:var(--gray);}
+  .status{font-size:12px;margin-top:8px;min-height:15px;}
+  .status.ok{color:var(--green);}
+  .status.err{color:var(--red);}
+  .preview{margin-top:8px;display:flex;align-items:center;gap:10px;}
+  .preview img{height:56px;width:56px;object-fit:cover;border-radius:6px;}
+  .preview button{background:none;color:var(--red);text-decoration:underline;padding:0;height:auto;font-weight:normal;font-size:12px;}
+
+  /* ---- support ---- */
+  .card{
+    background:linear-gradient(135deg,#2f6b41,#3f8a53);
+    color:#fff;border-radius:14px;padding:20px;
+    box-shadow:0 6px 18px rgba(0,0,0,.4);font-family:'SF Mono','Courier New',monospace;
+  }
+  .card .label{font-size:10.5px;letter-spacing:.1em;opacity:.85;margin-bottom:20px;text-transform:uppercase;}
+  .card .number{font-size:18px;letter-spacing:.1em;margin-bottom:18px;word-break:break-all;}
+  .card .bottom{display:flex;justify-content:space-between;font-size:10.5px;opacity:.9;}
+  .support p{color:#cfc7b6;font-size:11.5px;margin:10px 4px 0;line-height:1.5;}
+
+  .lightbox{display:none;position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:50;align-items:center;justify-content:center;padding:16px;}
+  .lightbox.open{display:flex;}
+  .lightbox img{max-width:100%;max-height:100%;border-radius:8px;}
+
+  @media(min-width:521px){
+    .wrap{max-width:600px;}
+    .lanes{grid-template-columns:repeat(4,1fr);}
+    .lane{border-right:1px solid var(--line);}
+    .lane:last-child{border-right:none;}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="row1">
+    <b>🚦 Garitas Mexicali</b>
+    <span class="visits">Visitas <b id="counterNum">···</b></span>
+  </div>
+  <div class="quicknav">
+    <a href="#tiempos">⏱ Tiempos</a>
+    <a href="#chat">💬 Chat</a>
+    <a href="#apoya">🙏 Apoya</a>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="updated" id="lastSync">Cargando… <button id="refreshBtn" type="button">actualizar</button></div>
+
+  <div id="tiempos">
+    <div class="garita">
+      <h2>Garita Centro <span>Calexico West</span></h2>
+      <div class="lanes" data-port="250302">
+        <div class="lane"><div class="lbl">Normal</div><div class="val loading">···</div></div>
+        <div class="lane"><div class="lbl">Ready Lane</div><div class="val loading">···</div></div>
+        <div class="lane"><div class="lbl">Sentri</div><div class="val loading">···</div></div>
+        <div class="lane"><div class="lbl">Peatonal</div><div class="val loading">···</div></div>
+      </div>
+    </div>
+    <div class="garita">
+      <h2>Garita Nueva <span>Calexico East</span></h2>
+      <div class="lanes" data-port="250301">
+        <div class="lane"><div class="lbl">Normal</div><div class="val loading">···</div></div>
+        <div class="lane"><div class="lbl">Ready Lane</div><div class="val loading">···</div></div>
+        <div class="lane"><div class="lbl">Sentri</div><div class="val loading">···</div></div>
+        <div class="lane"><div class="lbl">Peatonal</div><div class="val loading">···</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="h" id="chat">Chat de la fila · se borra cada 24h</div>
+  <div class="chat">
+    <div class="chat-sub">Comparte cómo está la fila o sube una foto.</div>
+    <div class="msgs" id="chatMessages"><div class="empty">Cargando…</div></div>
+    <form id="chatForm">
+      <div class="row">
+        <input type="text" name="name" maxlength="24" placeholder="Nombre (opcional)">
+      </div>
+      <div class="row2">
+        <select name="garita"><option value="">Garita</option><option>Centro</option><option>Nueva</option></select>
+        <select name="lane"><option value="">Línea</option><option>Normal</option><option>Ready Lane</option><option>Sentri</option><option>Peatonal</option></select>
+      </div>
+      <textarea name="text" maxlength="280" placeholder="¿Cómo está la fila?"></textarea>
+      <div class="preview" id="previewWrap" style="display:none;"></div>
+      <div class="actions">
+        <label class="filelbl">📷 Foto<input type="file" id="photoInput" accept="image/*" style="display:none;"></label>
+        <button type="submit" id="sendBtn">Enviar</button>
+      </div>
+      <div class="status" id="chatStatus"></div>
+    </form>
+  </div>
+
+  <div class="h" id="apoya">Apoya esta página</div>
+  <div class="support">
+    <div class="card">
+      <div class="label">Depósito directo</div>
+      <div class="number">CLABE: 012020015433865008</div>
+      <div class="bottom"><span>Garitas Mexicali</span><span>MXN</span></div>
+    </div>
+    <p>Transfiere desde la app de tu banco usando esta CLABE. Solo sirve para recibir depósitos — nadie puede cobrarte ni hacer compras con ella.</p>
+  </div>
+
+</div>
+
+<div class="lightbox" id="lightbox"><img id="lightboxImg" src=""></div>
+
+<script>
+(function(){
+  const FN_WT = "/.netlify/functions/wait-times";
+  const FN_CHAT = "/.netlify/functions/chat";
+  const FN_COUNTER = "/.netlify/functions/counter";
+  const CBP_DIRECT = "https://bwt.cbp.gov/api/waittimes";
+  const PROXIES = [
+    url => "https://api.allorigins.win/raw?url=" + encodeURIComponent(url),
+    url => "https://corsproxy.io/?" + encodeURIComponent(url)
+  ];
+
+  async function fetchViaProxies(url){
+    let lastErr;
+    for(const build of PROXIES){
+      try{
+        const res = await fetch(build(url));
+        if(!res.ok) throw new Error('bad status');
+        return await res.json();
+      }catch(e){ lastErr = e; }
+    }
+    throw lastErr || new Error('all proxies failed');
+  }
+
+  function num(v){
+    if(v===undefined||v===null||v===""||v==="N/A") return null;
+    const n=parseInt(v,10); return isNaN(n)?null:n;
+  }
+  function laneFrom(raw){
+    if(!raw) return {delay:null,status:"na"};
+    const s=(raw.operational_status||"").toLowerCase();
+    if(s.includes("closed")) return {delay:null,status:"closed"};
+    if(s==="n/a"||s===""||s.includes("update pending")) return {delay:null,status:"na"};
+    return {delay:num(raw.delay_minutes),status:"open"};
+  }
+  function cls(lane){
+    if(lane.status==="closed"||lane.status==="na"||lane.delay===null) return "gray";
+    if(lane.delay<15) return "green";
+    if(lane.delay<=45) return "yellow";
+    return "red";
+  }
+  function txt(lane){
+    if(lane.status==="closed") return "Cerrado";
+    if(lane.status==="na"||lane.delay===null) return "N/D";
+    if(lane.delay>=60){
+      const h=Math.floor(lane.delay/60), m=lane.delay%60;
+      return h+"h"+(m?m+"m":"");
+    }
+    return lane.delay+" min";
+  }
+  function setLanes(container, normal, ready, sentri, pedestrian){
+    const vals = container.querySelectorAll('.val');
+    const data = [normal, ready, sentri, pedestrian];
+    vals.forEach((el,i)=>{
+      el.className = 'val ' + cls(data[i]);
+      el.textContent = txt(data[i]);
+    });
+  }
+  function fillFromRaw(entry){
+    const container = document.querySelector(`.lanes[data-port="${entry.port_number}"]`);
+    if(!container) return;
+    const pv = entry.passenger_vehicle_lanes||{};
+    const ped = entry.pedestrian_lanes||{};
+    setLanes(container, laneFrom(pv.standard_lanes), laneFrom(pv.ready_lanes), laneFrom(pv.NEXUS_SENTRI_lanes), laneFrom(ped.standard_lanes));
+  }
+  function markError(){
+    document.querySelectorAll('.lanes').forEach(c=>{
+      c.querySelectorAll('.val').forEach(el=>{ el.className='val gray'; el.textContent='N/D'; });
+    });
+  }
+
+  const CACHE_KEY = 'gmx_last_good_times';
+
+  function readCache(){
+    try{ return JSON.parse(localStorage.getItem(CACHE_KEY)); }catch(e){ return null; }
+  }
+  function applyCache(cached){
+    document.querySelectorAll('.lanes').forEach(container=>{
+      const vals = cached.snap[container.dataset.port];
+      if(!vals) return;
+      container.querySelectorAll('.val').forEach((el,i)=>{
+        el.className = vals[i].cls;
+        el.textContent = vals[i].text;
+      });
+    });
+  }
+  function cacheSnapshot(){
+    const snap = {};
+    document.querySelectorAll('.lanes').forEach(container=>{
+      const vals = Array.from(container.querySelectorAll('.val')).map(el=>({cls:el.className, text:el.textContent}));
+      snap[container.dataset.port] = vals;
+    });
+    try{ localStorage.setItem(CACHE_KEY, JSON.stringify({snap, ts: Date.now()})); }catch(e){}
+  }
+  // called once on page load: show the last known times right away instead of "···"
+  function prefillFromCache(){
+    const cached = readCache();
+    if(!cached) return false;
+    applyCache(cached);
+    const mins = Math.max(0, Math.round((Date.now()-cached.ts)/60000));
+    document.getElementById('lastSync').firstChild.textContent =
+      'Mostrando datos de hace ' + mins + ' min · actualizando… ';
+    return true;
+  }
+  // called when a live fetch genuinely fails: same cache, but as an explicit warning
+  function restoreFromCache(){
+    const cached = readCache();
+    if(!cached) return false;
+    applyCache(cached);
+    const mins = Math.max(1, Math.round((Date.now()-cached.ts)/60000));
+    document.getElementById('lastSync').firstChild.textContent =
+      '⚠️ CBP no responde · último dato de hace ' + mins + ' min · revisa el chat ';
+    return true;
+  }
+
+  async function loadWaitTimes(){
+    try{
+      const res = await fetch(FN_WT);
+      if(res.ok){
+        const data = await res.json();
+        if(data.ports){
+          const map = {"250302":data.ports[0], "250301":data.ports[1]};
+          document.querySelectorAll('.lanes').forEach(container=>{
+            const port = map[container.dataset.port];
+            if(!port) return;
+            setLanes(container, port.normal, port.readyLane, port.sentri, port.pedestrian);
+          });
+          document.getElementById('lastSync').firstChild.textContent = 'Actualizado ' + new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}) + ' ';
+          cacheSnapshot();
+          return;
+        }
+      }
+      throw new Error('fn failed');
+    }catch(e){
+      try{
+        const all = await fetchViaProxies(CBP_DIRECT);
+        ["250302","250301"].forEach(pn=>{
+          const entry = all.find(x=>x.port_number===pn);
+          if(entry) fillFromRaw(entry);
+        });
+        document.getElementById('lastSync').firstChild.textContent = 'Actualizado ' + new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}) + ' ';
+        cacheSnapshot();
+      }catch(e2){
+        // both the Netlify function and the direct CBP fetch failed —
+        // fall back to the last known-good reading instead of a blank screen
+        if(!restoreFromCache()){
+          markError();
+          document.getElementById('lastSync').firstChild.textContent = 'Sin conexión con CBP ';
+        }
+      }
+    }
+  }
+  document.getElementById('refreshBtn').addEventListener('click', loadWaitTimes);
+
+  /* ---------- counter ---------- */
+  async function loadCounter(){
+    try{
+      const already = sessionStorage.getItem('gmx_counted');
+      const res = await fetch(FN_COUNTER + (already?'?count=0':'?count=1'));
+      const data = await res.json();
+      document.getElementById('counterNum').textContent = data.total.toLocaleString('es-MX');
+      sessionStorage.setItem('gmx_counted','1');
+    }catch(e){ document.getElementById('counterNum').textContent = '—'; }
+  }
+
+  /* ---------- chat ---------- */
+  let selectedPhoto = null;
+  function timeAgo(iso){
+    const diff=(Date.now()-new Date(iso).getTime())/1000;
+    if(diff<60) return 'ahora';
+    if(diff<3600) return Math.floor(diff/60)+' min';
+    return Math.floor(diff/3600)+' h';
+  }
+  function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+  function renderMsgs(list){
+    const box=document.getElementById('chatMessages');
+    if(!list.length){ box.innerHTML='<div class="empty">Sin reportes en las últimas 24h. Sé el primero.</div>'; return; }
+    box.innerHTML=list.slice().reverse().map(m=>`
+      <div class="msg">
+        <div class="meta"><span><span class="who">${esc(m.name||'Anónimo')}</span>${m.garita?`<span class="tag">${esc(m.garita)}</span>`:''}${m.lane?`<span class="tag">${esc(m.lane)}</span>`:''}</span><span>${timeAgo(m.ts)}</span></div>
+        ${m.text?`<div>${esc(m.text)}</div>`:''}
+        ${m.image?`<img src="${m.image}" onclick="window.__lb(this.src)">`:''}
+      </div>`).join('');
+  }
+  window.__lb=function(src){document.getElementById('lightboxImg').src=src;document.getElementById('lightbox').classList.add('open');};
+  document.getElementById('lightbox').addEventListener('click',function(){this.classList.remove('open');});
+
+  async function loadChat(){
+    try{
+      const res=await fetch(FN_CHAT);
+      const data=await res.json();
+      renderMsgs(data.messages||[]);
+    }catch(e){ document.getElementById('chatMessages').innerHTML='<div class="empty">Chat no disponible (necesita estar desplegado en Netlify).</div>'; }
+  }
+
+  document.getElementById('photoInput').addEventListener('change',function(e){
+    const file=e.target.files[0]; if(!file) return;
+    const reader=new FileReader();
+    reader.onload=function(ev){
+      const img=new Image();
+      img.onload=function(){
+        const c=document.createElement('canvas'); const MAX=900;
+        let w=img.width,h=img.height;
+        if(w>h && w>MAX){h*=MAX/w;w=MAX;} else if(h>MAX){w*=MAX/h;h=MAX;}
+        c.width=w;c.height=h; c.getContext('2d').drawImage(img,0,0,w,h);
+        selectedPhoto=c.toDataURL('image/jpeg',0.7);
+        const wrap=document.getElementById('previewWrap');
+        wrap.style.display='flex';
+        wrap.innerHTML='<img src="'+selectedPhoto+'"><button type="button" id="rmPhoto">quitar</button>';
+        document.getElementById('rmPhoto').addEventListener('click',function(){
+          selectedPhoto=null; wrap.style.display='none'; wrap.innerHTML='';
+          document.getElementById('photoInput').value='';
+        });
+      };
+      img.src=ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  let cooldown=0;
+  document.getElementById('chatForm').addEventListener('submit', async function(e){
+    e.preventDefault();
+    const statusEl=document.getElementById('chatStatus');
+    if(Date.now()<cooldown){ statusEl.textContent='Espera unos segundos.'; statusEl.className='status err'; return; }
+    const f=e.target;
+    const name=f.name.value.trim().slice(0,24);
+    const garita=f.garita.value, lane=f.lane.value;
+    const text=f.text.value.trim().slice(0,280);
+    if(!text && !selectedPhoto){ statusEl.textContent='Escribe algo o adjunta foto.'; statusEl.className='status err'; return; }
+    const btn=document.getElementById('sendBtn'); btn.disabled=true;
+    statusEl.textContent='Enviando…'; statusEl.className='status';
+    try{
+      const res=await fetch(FN_CHAT,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({name,garita,lane,text,image:selectedPhoto})});
+      const data=await res.json();
+      if(!res.ok){ statusEl.textContent=data.error||'No se pudo enviar.'; statusEl.className='status err'; }
+      else{
+        statusEl.textContent='Publicado.'; statusEl.className='status ok';
+        f.text.value=''; selectedPhoto=null;
+        document.getElementById('previewWrap').style.display='none';
+        document.getElementById('previewWrap').innerHTML='';
+        document.getElementById('photoInput').value='';
+        cooldown=Date.now()+15000;
+        loadChat();
+      }
+    }catch(err){ statusEl.textContent='Error de conexión.'; statusEl.className='status err'; }
+    finally{ setTimeout(()=>{btn.disabled=false;},4000); }
+  });
+
+  loadCounter();
+  prefillFromCache();
+  loadWaitTimes();
+  loadChat();
+  setInterval(loadWaitTimes,60000);
+  setInterval(loadChat,20000);
+})();
+</script>
+</body>
+</html>
